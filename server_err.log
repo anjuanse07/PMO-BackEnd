@@ -1,0 +1,105 @@
+Create approved order failed: Error: Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1
+    at D:\XAMPP\htdocs\PMO-BackEnd\server.js:278:33
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:117:3)
+    at handle (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:295:15
+    at processParams (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:582:12)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:291:5)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\body-parser\lib\read.js:171:5 {
+  code: 'ER_TRUNCATED_WRONG_VALUE',
+  errno: 1292,
+  sqlState: '22007',
+  sqlMessage: "Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1",
+  sql: '\n' +
+    '        INSERT INTO maintenance_orders\n' +
+    '        (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date)\n' +
+    "        VALUES (534, 'EG 106', 'AHU 1.03', 'NBL 2, MEZZANINE LT.1', 'EG1', 'UTY', 2026, 8, 1, 'Cleaning,Service', '2026-08-30T17:00:00.000Z', '2026-08-30T17:00:00.000Z', '08:00:00', '10:00:00', 'Planner', 'Approval', '2026-08-19 02:16:26')\n" +
+    '      '
+}
+Create approved order failed: Error: Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1
+    at D:\XAMPP\htdocs\PMO-BackEnd\server.js:278:33
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:117:3)
+    at handle (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:295:15
+    at processParams (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:582:12)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:291:5)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\body-parser\lib\read.js:171:5 {
+  code: 'ER_TRUNCATED_WRONG_VALUE',
+  errno: 1292,
+  sqlState: '22007',
+  sqlMessage: "Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1",
+  sql: '\n' +
+    '        INSERT INTO maintenance_orders\n' +
+    '        (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date)\n' +
+    "        VALUES (534, 'EG 106', 'AHU 1.03', 'NBL 2, MEZZANINE LT.1', 'EG1', 'UTY', 2026, 8, 1, 'Cleaning,Service', '2026-08-30T17:00:00.000Z', '2026-08-30T17:00:00.000Z', '08:00:00', '10:00:00', 'Planner', 'Approval', '2026-08-19 02:26:53')\n" +
+    '      '
+}
+Create approved order failed: Error: Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1
+    at D:\XAMPP\htdocs\PMO-BackEnd\server.js:278:33
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:117:3)
+    at handle (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:295:15
+    at processParams (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:582:12)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:291:5)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\body-parser\lib\read.js:171:5 {
+  code: 'ER_TRUNCATED_WRONG_VALUE',
+  errno: 1292,
+  sqlState: '22007',
+  sqlMessage: "Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1",
+  sql: '\n' +
+    '        INSERT INTO maintenance_orders\n' +
+    '        (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date)\n' +
+    "        VALUES (534, 'EG 106', 'AHU 1.03', 'NBL 2, MEZZANINE LT.1', 'EG1', 'UTY', 2026, 8, 1, 'Cleaning,Service', '2026-08-30T17:00:00.000Z', '2026-08-30T17:00:00.000Z', '08:00:00', '10:00:00', 'Planner', 'Approval', '2026-08-19 02:28:22')\n" +
+    '      '
+}
+Create approved order failed: Error: Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1
+    at D:\XAMPP\htdocs\PMO-BackEnd\server.js:278:33
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:117:3)
+    at handle (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:295:15
+    at processParams (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:582:12)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:291:5)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\body-parser\lib\read.js:171:5 {
+  code: 'ER_TRUNCATED_WRONG_VALUE',
+  errno: 1292,
+  sqlState: '22007',
+  sqlMessage: "Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1",
+  sql: '\n' +
+    '        INSERT INTO maintenance_orders\n' +
+    '        (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date)\n' +
+    "        VALUES (534, 'EG 106', 'AHU 1.03', 'NBL 2, MEZZANINE LT.1', 'EG1', 'UTY', 2026, 8, 1, 'Cleaning,Service', '2026-08-30T17:00:00.000Z', '2026-08-30T17:00:00.000Z', '08:00:00', '10:00:00', 'Planner', 'Approval', '2026-08-19 02:28:24')\n" +
+    '      '
+}
+Create approved order failed: Error: Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1
+    at D:\XAMPP\htdocs\PMO-BackEnd\server.js:278:33
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\route.js:117:3)
+    at handle (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\lib\layer.js:152:17)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:295:15
+    at processParams (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:582:12)
+    at next (D:\XAMPP\htdocs\PMO-BackEnd\node_modules\router\index.js:291:5)
+    at D:\XAMPP\htdocs\PMO-BackEnd\node_modules\body-parser\lib\read.js:171:5 {
+  code: 'ER_TRUNCATED_WRONG_VALUE',
+  errno: 1292,
+  sqlState: '22007',
+  sqlMessage: "Incorrect date value: '2026-08-30T17:00:00.000Z' for column `PMO`.`maintenance_orders`.`preventive_date` at row 1",
+  sql: '\n' +
+    '        INSERT INTO maintenance_orders\n' +
+    '        (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date)\n' +
+    "        VALUES (587, 'EG 180', 'AHU 1.10', 'NBL 2, MEZZANINE LT.1', 'EG1', 'UTY', 2026, 8, 1, 'Cleaning,Service', '2026-08-30T17:00:00.000Z', '2026-08-30T17:00:00.000Z', '08:00:00', '10:00:00', 'Planner', 'Approval', '2026-08-19 02:29:03')\n" +
+    '      '
+}
