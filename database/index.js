@@ -1,4 +1,4 @@
-require("dotenv").config(); // Mengambil data dari file .env
+require("dotenv").config(); // ambil data dari file .env
 const mysql = require("mysql2");
 const util = require("util");
 

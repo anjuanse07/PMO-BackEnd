@@ -720,5 +720,70 @@ app.get('/api/users/:id', async (req, res) => {
   }
 });
 
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({ message: 'Invalid user id.' });
+    }
+
+    const { name, nickname, firstName, lastName, email, phone } = req.body;
+
+    const fields = [];
+    const values = [];
+    if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+    if (nickname !== undefined) { fields.push('nickname = ?'); values.push(nickname); }
+    if (firstName !== undefined) { fields.push('first_name = ?'); values.push(firstName); }
+    if (lastName !== undefined) { fields.push('last_name = ?'); values.push(lastName); }
+    if (email !== undefined) { fields.push('email = ?'); values.push(email); }
+    if (phone !== undefined) { fields.push('phone = ?'); values.push(phone); }
+
+    if (!fields.length) {
+      return res.status(400).json({ message: 'No fields to update.' });
+    }
+
+    values.push(userId);
+    const [result] = await pool.query(
+      `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND is_active = 1`,
+      values,
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const [rows] = await pool.query(
+      `
+        SELECT id, nickname, name, first_name, last_name, email, phone, role
+        FROM users
+        WHERE id = ? AND is_active = 1
+      `,
+      [userId]
+    );
+
+    const user = rows[0];
+
+    res.json({
+      user: {
+        id: user.id,
+        nickname: user.nickname,
+        name: user.name,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error('Update user failed:', error);
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'That nickname is already taken.' });
+    }
+    res.status(500).json({ message: 'Failed to update user.' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
