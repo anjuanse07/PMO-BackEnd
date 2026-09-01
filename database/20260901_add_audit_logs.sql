@@ -1,0 +1,29 @@
+-- Apply once to the PMO database. MariaDB 10.3+ is required for IF NOT EXISTS.
+ALTER TABLE machines
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+ALTER TABLE preventive_types
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+ALTER TABLE technicians
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  user_id INT NULL,
+  session_id VARCHAR(64) NULL,
+  event_type VARCHAR(64) NOT NULL,
+  entity_type VARCHAR(64) NULL,
+  entity_id VARCHAR(64) NULL,
+  page_path VARCHAR(512) NULL,
+  action_label VARCHAR(255) NULL,
+  metadata JSON NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(512) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_audit_logs_user_created (user_id, created_at),
+  KEY idx_audit_logs_session_created (session_id, created_at),
+  KEY idx_audit_logs_event_created (event_type, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;

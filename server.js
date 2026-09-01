@@ -36,6 +36,38 @@ function toMySQLDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
+async function logAuditEvent(req, {
+  userId = null,
+  eventType,
+  entityType = null,
+  entityId = null,
+  pagePath = null,
+  actionLabel = null,
+  metadata = null,
+}) {
+  try {
+    await pool.query(
+      `INSERT INTO audit_logs
+       (user_id, session_id, event_type, entity_type, entity_id, page_path, action_label, metadata, ip_address, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId || null,
+        req.get('x-audit-session-id') || null,
+        eventType,
+        entityType,
+        entityId === null ? null : String(entityId),
+        pagePath,
+        actionLabel,
+        metadata ? JSON.stringify(metadata) : null,
+        req.ip || null,
+        req.get('user-agent') || null,
+      ],
+    );
+  } catch (error) {
+    console.error('Write audit log failed:', error);
+  }
+}
+
 app.get('/api/health', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT 1 AS ok');
@@ -43,6 +75,49 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     console.error('Database health check failed:', error);
     res.status(500).json({ ok: false, message: 'MariaDB connection failed' });
+  }
+});
+
+app.post('/api/audit-events', async (req, res) => {
+  const { user_id, event_type, page_path, action_label } = req.body;
+  const allowedEventTypes = ['PAGE_VIEW', 'CLICK'];
+
+  if (!Number(user_id) || !allowedEventTypes.includes(event_type)) {
+    return res.status(400).json({ message: 'A user_id and valid event_type are required.' });
+  }
+
+  await logAuditEvent(req, {
+    userId: Number(user_id),
+    eventType: event_type,
+    pagePath: typeof page_path === 'string' ? page_path.slice(0, 512) : null,
+    actionLabel: typeof action_label === 'string' ? action_label.slice(0, 255) : null,
+  });
+  res.status(204).end();
+});
+
+app.get('/api/audit-logs', async (req, res) => {
+  if (String(req.query.role || '').toLowerCase() !== 'manager') {
+    return res.status(403).json({ message: 'Only managers can view audit logs.' });
+  }
+
+  const requestedLimit = Number(req.query.limit);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 200) : 100;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, a.session_id,
+              a.event_type, a.entity_type, a.entity_id, a.page_path,
+              a.action_label, a.metadata, a.ip_address, a.user_agent, a.created_at
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT ?`,
+      [limit],
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Fetch audit logs failed:', error);
+    res.status(500).json({ message: 'Failed to fetch audit logs.' });
   }
 });
 
@@ -58,6 +133,21 @@ app.get('/api/machines', async (req, res) => {
   } catch (error) {
     console.error('Fetch machines failed:', error);
     res.status(500).json({ message: 'Failed to fetch machines' });
+  }
+});
+
+app.get('/api/technicians', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT technician_name, role, detail_technician_role, technician_main_sub, technician_child_sub
+      FROM technicians
+      ORDER BY technician_main_sub, technician_name
+    `);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Fetch technicians failed:', error);
+    res.status(500).json({ message: 'Failed to fetch technicians' });
   }
 });
 
@@ -297,6 +387,7 @@ app.patch('/api/schedules/:id/status', async (req, res) => {
       approved_by_engineering_user,
       approved_by_manager_user,
       current_role,
+      actor_user_id,
     } = req.body;
 
     if (!status) {
@@ -367,6 +458,16 @@ app.patch('/api/schedules/:id/status', async (req, res) => {
       `UPDATE preventive_schedule SET ${fields.join(', ')} WHERE id = ?`,
       values,
     );
+
+    if (status === 'Approved by Engineering' || status === 'Approved by Manager') {
+      await logAuditEvent(req, {
+        userId: Number(actor_user_id) || null,
+        eventType: status === 'Approved by Engineering' ? 'SCHEDULE_APPROVED_ENGINEERING' : 'SCHEDULE_APPROVED_MANAGER',
+        entityType: 'preventive_schedule',
+        entityId: id,
+        metadata: { previousStatus, status },
+      });
+    }
 
     res.json({ success: true, id: Number(id), status });
   } catch (error) {
@@ -481,12 +582,19 @@ app.patch('/api/approved-orders/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const {
+      machine_asset,
       preventive_date,
       execution_date,
       start_clock,
       end_clock,
       technician_name,
       status,
+      approved_by_technician_date,
+      approved_by_technician_user,
+      approved_by_pic_date,
+      approved_by_pic_user,
+      approved_by_engineering_date,
+      approved_by_engineering_user,
     } = req.body;
 
     const validStatuses = ['In Progress', 'Approval', 'Completed'];
@@ -496,12 +604,19 @@ app.patch('/api/approved-orders/:id', async (req, res) => {
 
     const fields = [];
     const values = [];
+    if (machine_asset !== undefined) { fields.push('machine_asset = ?'); values.push(machine_asset); }
     if (preventive_date !== undefined) { fields.push('preventive_date = ?'); values.push(toMySQLDate(preventive_date)); }
     if (execution_date !== undefined) { fields.push('execution_date = ?'); values.push(toMySQLDate(execution_date)); }
     if (start_clock !== undefined) { fields.push('start_clock = ?'); values.push(start_clock); }
     if (end_clock !== undefined) { fields.push('end_clock = ?'); values.push(end_clock); }
     if (technician_name !== undefined) { fields.push('technician_name = ?'); values.push(technician_name); }
     if (status !== undefined) { fields.push('status = ?'); values.push(status); }
+    if (approved_by_technician_date !== undefined) { fields.push('approved_by_technician_date = ?'); values.push(toMySQLDateTime(approved_by_technician_date)); }
+    if (approved_by_technician_user !== undefined) { fields.push('approved_by_technician_user = ?'); values.push(approved_by_technician_user); }
+    if (approved_by_pic_date !== undefined) { fields.push('approved_by_pic_date = ?'); values.push(toMySQLDateTime(approved_by_pic_date)); }
+    if (approved_by_pic_user !== undefined) { fields.push('approved_by_pic_user = ?'); values.push(approved_by_pic_user); }
+    if (approved_by_engineering_date !== undefined) { fields.push('approved_by_engineering_date = ?'); values.push(toMySQLDateTime(approved_by_engineering_date)); }
+    if (approved_by_engineering_user !== undefined) { fields.push('approved_by_engineering_user = ?'); values.push(approved_by_engineering_user); }
 
     if (!fields.length) {
       return res.status(400).json({ message: 'No fields to update' });
@@ -659,6 +774,12 @@ app.post('/api/users/login', async (req, res) => {
     }
 
     const user = rows[0];
+    await logAuditEvent(req, {
+      userId: user.id,
+      eventType: 'LOGIN',
+      entityType: 'users',
+      entityId: user.id,
+    });
     res.json({
       user: {
         id: user.id,
@@ -677,6 +798,21 @@ app.post('/api/users/login', async (req, res) => {
       message: 'Failed to login user.',
     });
   }
+});
+
+app.post('/api/users/logout', async (req, res) => {
+  const userId = Number(req.body.user_id);
+  if (!userId || Number.isNaN(userId)) {
+    return res.status(400).json({ message: 'A valid user_id is required.' });
+  }
+
+  await logAuditEvent(req, {
+    userId,
+    eventType: 'LOGOUT',
+    entityType: 'users',
+    entityId: userId,
+  });
+  res.status(204).end();
 });
 
 app.get('/api/users/:id', async (req, res) => {
