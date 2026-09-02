@@ -46,12 +46,13 @@ async function logAuditEvent(req, {
   metadata = null,
 }) {
   try {
+    const effectiveUserId = userId || Number(req.get('x-audit-user-id')) || null;
     await pool.query(
       `INSERT INTO audit_logs
        (user_id, session_id, event_type, entity_type, entity_id, page_path, action_label, metadata, ip_address, user_agent)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        userId || null,
+        effectiveUserId,
         req.get('x-audit-session-id') || null,
         eventType,
         entityType,
@@ -80,7 +81,7 @@ app.get('/api/health', async (req, res) => {
 
 app.post('/api/audit-events', async (req, res) => {
   const { user_id, event_type, page_path, action_label } = req.body;
-  const allowedEventTypes = ['PAGE_VIEW', 'CLICK'];
+  const allowedEventTypes = ['PAGE_VIEW'];
 
   if (!Number(user_id) || !allowedEventTypes.includes(event_type)) {
     return res.status(400).json({ message: 'A user_id and valid event_type are required.' });
@@ -100,39 +101,384 @@ app.get('/api/audit-logs', async (req, res) => {
     return res.status(403).json({ message: 'Only managers can view audit logs.' });
   }
 
-  const requestedLimit = Number(req.query.limit);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 200) : 100;
+  const pageSize = 50;
+  const requestedPage = Number(req.query.page);
+  const page = Number.isFinite(requestedPage) ? Math.max(Math.floor(requestedPage), 1) : 1;
+  const search = String(req.query.search || '').trim();
+  const activity = String(req.query.activity || '').trim();
+  const startAt = String(req.query.start_at || '').trim();
+  const endAt = String(req.query.end_at || '').trim();
+  const filters = [];
+  const values = [];
+
+  if (search) {
+    filters.push(`(a.event_type LIKE ? OR a.page_path LIKE ? OR a.action_label LIKE ?
+      OR a.entity_type LIKE ? OR a.entity_id LIKE ? OR u.nickname LIKE ? OR u.name LIKE ?)`);
+    values.push(...Array(7).fill(`%${search}%`));
+  }
+  if (activity) {
+    filters.push('a.event_type LIKE ?');
+    values.push(`%${activity}%`);
+  }
+  if (startAt) {
+    filters.push('a.created_at >= ?');
+    values.push(startAt);
+  }
+  if (endAt) {
+    filters.push('a.created_at <= ?');
+    values.push(endAt);
+  }
+  const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
   try {
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       ${whereClause}`,
+      values,
+    );
+    const total = Number(countRow.total);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const currentPage = Math.min(page, totalPages);
     const [rows] = await pool.query(
       `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, a.session_id,
               a.event_type, a.entity_type, a.entity_id, a.page_path,
               a.action_label, a.metadata, a.ip_address, a.user_agent, a.created_at
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.user_id
+       ${whereClause}
        ORDER BY a.created_at DESC, a.id DESC
-       LIMIT ?`,
-      [limit],
+       LIMIT ? OFFSET ?`,
+      [...values, pageSize, (currentPage - 1) * pageSize],
     );
-    res.json(rows);
+    res.json({ rows, page: currentPage, pageSize, total, totalPages });
   } catch (error) {
     console.error('Fetch audit logs failed:', error);
     res.status(500).json({ message: 'Failed to fetch audit logs.' });
   }
 });
 
+app.get('/api/audit-logs/export', async (req, res) => {
+  if (String(req.query.role || '').toLowerCase() !== 'manager') {
+    return res.status(403).json({ message: 'Only managers can export audit logs.' });
+  }
+
+  const format = req.query.format === 'pdf' ? 'pdf' : 'csv';
+  const userId = Number(req.query.user_id) || null;
+  const activity = String(req.query.activity || '').trim();
+  const startAt = String(req.query.start_at || '').trim();
+  const endAt = String(req.query.end_at || '').trim();
+  const filters = [];
+  const values = [];
+
+  if (activity) {
+    filters.push('a.event_type LIKE ?');
+    values.push(`%${activity}%`);
+  }
+  if (startAt) {
+    filters.push('a.created_at >= ?');
+    values.push(startAt);
+  }
+  if (endAt) {
+    filters.push('a.created_at <= ?');
+    values.push(endAt);
+  }
+  const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+  try {
+    const [rows] = await pool.query(
+          `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, a.session_id,
+            a.event_type, a.entity_type, a.entity_id, a.page_path,
+            a.action_label, a.metadata, a.ip_address, a.user_agent, a.created_at
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       ${whereClause}
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT 10000`,
+      values,
+    );
+    await logAuditEvent(req, {
+      userId,
+      eventType: 'AUDIT_LOG_EXPORT',
+      entityType: 'audit_logs',
+      actionLabel: `${format.toUpperCase()} export`,
+      metadata: { format, activity: activity || null, startAt: startAt || null, endAt: endAt || null, rowCount: rows.length },
+    });
+
+    if (format === 'pdf') {
+      return res.json(rows);
+    }
+
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const columns = ['Time', 'Activity', 'Account', 'User ID', 'Page', 'Action', 'Entity Type', 'Entity ID', 'IP Address', 'Browser'];
+    const lines = rows.map((row) => [
+      row.created_at,
+      row.event_type,
+      row.user_name || row.nickname || 'System',
+      row.user_id,
+      row.page_path,
+      row.action_label,
+      row.entity_type,
+      row.entity_id,
+      row.ip_address,
+      row.user_agent,
+    ].map(escapeCsv).join(','));
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="pmo-audit-logs.csv"');
+    res.send(`\uFEFF${columns.map(escapeCsv).join(',')}\n${lines.join('\n')}`);
+  } catch (error) {
+    console.error('Export audit logs failed:', error);
+    res.status(500).json({ message: 'Failed to export audit logs.' });
+  }
+});
+
 app.get('/api/machines', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT no, kode_mesin, nama_mesin, lokasi, departemen, kategori
+      SELECT no, kode_mesin, nama_mesin, lokasi, departemen, kategori, sub_child
       FROM machines
-      ORDER BY kategori, nama_mesin
+      ORDER BY kategori, sub_child, nama_mesin
     `);
 
     res.json(rows);
   } catch (error) {
     console.error('Fetch machines failed:', error);
     res.status(500).json({ message: 'Failed to fetch machines' });
+  }
+});
+
+// Shared WHERE-clause builder for both /api/history-logs and its CSV export,
+// so filtering logic never drifts between the two.
+function buildHistoryLogFilters(req) {
+  const search = String(req.query.search || '').trim();
+  const mainSub = String(req.query.main_sub || '').trim();       // MTC / UTY / BLD
+  const childSub = String(req.query.child_sub || '').trim();     // e.g. 'UTY 1'
+  const machineNo = Number(req.query.machine_no) || null;
+  const machineName = String(req.query.machine_name || '').trim();
+  const machineId = String(req.query.machine_id || '').trim();   // kode_mesin / asset code
+  const status = String(req.query.status || '').trim();
+  const startAt = String(req.query.start_at || '').trim();       // date, inclusive
+  const endAt = String(req.query.end_at || '').trim();           // date, inclusive
+
+  const filters = [];
+  const values = [];
+
+  if (search) {
+    filters.push(`(o.machine_name LIKE ? OR o.machine_asset LIKE ? OR o.technician_name LIKE ?
+      OR o.preventive_types LIKE ? OR o.department LIKE ? OR o.location LIKE ?)`);
+    values.push(...Array(6).fill(`%${search}%`));
+  }
+  if (mainSub) {
+    filters.push('o.sub = ?');
+    values.push(mainSub);
+  }
+  if (childSub) {
+    filters.push('m.sub_child = ?');
+    values.push(childSub);
+  }
+  if (machineNo) {
+    filters.push('o.machine_no = ?');
+    values.push(machineNo);
+  }
+  if (machineName) {
+    filters.push('o.machine_name LIKE ?');
+    values.push(`%${machineName}%`);
+  }
+  if (machineId) {
+    filters.push('o.machine_asset LIKE ?');
+    values.push(`%${machineId}%`);
+  }
+  if (status) {
+    filters.push('o.status = ?');
+    values.push(status);
+  }
+  if (startAt) {
+    filters.push('COALESCE(o.execution_date, o.preventive_date) >= ?');
+    values.push(startAt);
+  }
+  if (endAt) {
+    filters.push('COALESCE(o.execution_date, o.preventive_date) <= ?');
+    values.push(endAt);
+  }
+
+  return { whereClause: filters.length ? `WHERE ${filters.join(' AND ')}` : '', values };
+}
+
+// GET /api/history-logs
+// Flat list of every preventive-maintenance record ever run on a machine,
+// oldest-first, with the machine's main/child sub attached. The frontend
+// groups this by main sub -> machine -> chronological entries.
+app.get('/api/history-logs', async (req, res) => {
+  try {
+    const { whereClause, values } = buildHistoryLogFilters(req);
+
+    const [rows] = await pool.query(
+      `SELECT o.id, o.machine_no, o.machine_asset, o.machine_name, o.location, o.department,
+              o.sub AS main_sub, m.sub_child,
+              o.preventive_types, o.preventive_date, o.execution_date,
+              o.start_clock, o.end_clock, o.technician_name, o.status,
+              o.approved_by_manager_date, o.approved_by_manager_user,
+              o.created_at, o.updated_at
+       FROM maintenance_orders o
+       JOIN machines m ON m.no = o.machine_no
+       ${whereClause}
+       ORDER BY COALESCE(o.execution_date, o.preventive_date) ASC, o.id ASC
+       LIMIT 5000`,
+      values,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Fetch history logs failed:', error);
+    res.status(500).json({ message: 'Failed to fetch history logs' });
+  }
+});
+
+// GET /api/history-logs/export
+// Same filters as above, flattened to CSV. Logs an audit event, same
+// pattern as /api/audit-logs/export.
+app.get('/api/history-logs/export', async (req, res) => {
+  try {
+    const { whereClause, values } = buildHistoryLogFilters(req);
+    const userId = Number(req.query.user_id) || null;
+
+    const [rows] = await pool.query(
+      `SELECT o.id, o.machine_asset, o.machine_name, o.location, o.department,
+              o.sub AS main_sub, m.sub_child,
+              o.preventive_types, o.preventive_date, o.execution_date,
+              o.start_clock, o.end_clock, o.technician_name, o.status
+       FROM maintenance_orders o
+       JOIN machines m ON m.no = o.machine_no
+       ${whereClause}
+       ORDER BY COALESCE(o.execution_date, o.preventive_date) ASC, o.id ASC
+       LIMIT 20000`,
+      values,
+    );
+
+    await logAuditEvent(req, {
+      userId,
+      eventType: 'HISTORY_LOG_EXPORT',
+      entityType: 'maintenance_orders',
+      actionLabel: 'CSV export',
+      metadata: { rowCount: rows.length },
+    });
+
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const columns = [
+      'Main Sub', 'Child Sub', 'Machine Asset', 'Machine Name', 'Department', 'Location',
+      'Preventive Type', 'Scheduled Date', 'Execution Date', 'Start', 'End', 'Technician', 'Status',
+    ];
+    const lines = rows.map((row) => [
+      row.main_sub,
+      row.sub_child,
+      row.machine_asset,
+      row.machine_name,
+      row.department,
+      row.location,
+      row.preventive_types,
+      row.preventive_date,
+      row.execution_date,
+      row.start_clock,
+      row.end_clock,
+      row.technician_name,
+      row.status,
+    ].map(escapeCsv).join(','));
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="pmo-history-logs.csv"');
+    res.send(`\uFEFF${columns.map(escapeCsv).join(',')}\n${lines.join('\n')}`);
+  } catch (error) {
+    console.error('Export history logs failed:', error);
+    res.status(500).json({ message: 'Failed to export history logs' });
+  }
+});
+
+// POST /api/history-logs/import
+// Bulk-imports LEGACY completed preventive records (from before this
+// system existed) directly into maintenance_orders, so they show up in
+// the History Log timeline for their machine. Each item is matched to a
+// machine by its Asset_Code (kode_mesin). Rows that don't match a known
+// machine, or are missing a preventive type / execution date, are skipped.
+//
+// NOTE: imported rows won't have a matching order_checklist_results
+// checklist (there was no digital form for them) - "View Form" on the
+// frontend handles that gracefully and says no checklist is on file.
+app.post('/api/history-logs/import', async (req, res) => {
+  try {
+    const items = req.body.items;
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(400).json({ message: 'items array is required' });
+    }
+
+    const [machines] = await pool.query(
+      'SELECT no, kode_mesin, nama_mesin, lokasi, departemen, kategori FROM machines',
+    );
+    const machineByAsset = new Map(machines.map((m) => [String(m.kode_mesin).trim().toLowerCase(), m]));
+
+    const validStatuses = ['In Progress', 'Approval', 'Completed'];
+    const values = [];
+    const skipped = [];
+
+    items.forEach((item, index) => {
+      const assetCode = String(item.machine_asset || '').trim();
+      const machine = machineByAsset.get(assetCode.toLowerCase());
+      const executionDate = toMySQLDate(item.execution_date);
+
+      if (!machine || !item.preventive_types || !executionDate) {
+        skipped.push(`row ${index + 2}`); // +2: 1-based, plus header row
+        return;
+      }
+
+      const execDate = new Date(executionDate);
+      const status = validStatuses.includes(item.status) ? item.status : 'Completed';
+
+      values.push([
+        machine.no,
+        machine.kode_mesin,
+        machine.nama_mesin,
+        machine.lokasi || null,
+        machine.departemen || null,
+        machine.kategori,
+        execDate.getFullYear(),
+        execDate.getMonth() + 1, // maintenance_orders.month is 1-based (see existing rows)
+        Math.min(5, Math.ceil(execDate.getDate() / 7)), // rough week-of-month for legacy rows
+        item.preventive_types,
+        executionDate,
+        executionDate,
+        item.start_clock || null,
+        item.end_clock || null,
+        item.technician_name || null,
+        status,
+      ]);
+    });
+
+    if (!values.length) {
+      return res.status(400).json({
+        message: 'No valid rows to import. Check Asset_Code, Preventive_Type, and Execution_Date.',
+        skipped,
+      });
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO maintenance_orders
+       (machine_no, machine_asset, machine_name, location, department, sub, year, month, week,
+        preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status)
+       VALUES ?`,
+      [values],
+    );
+
+    await logAuditEvent(req, {
+      eventType: 'HISTORY_LOG_IMPORTED',
+      entityType: 'maintenance_orders',
+      metadata: { inserted: result.affectedRows, skipped: skipped.length },
+    });
+
+    res.status(201).json({ success: true, inserted: result.affectedRows, skipped });
+  } catch (error) {
+    console.error('Import history logs failed:', error);
+    res.status(500).json({ message: 'Failed to import history logs' });
   }
 });
 
@@ -196,6 +542,8 @@ app.post('/api/machine-parameters', async (req, res) => {
       [machine_no, part_master, part_checklist, action || null, standard || null, Number(sort_order) || 0]
     );
 
+    await logAuditEvent(req, { eventType: 'MACHINE_PARAMETER_CREATED', entityType: 'machine_parameters', entityId: result.insertId, metadata: { machineNo: machine_no } });
+
     res.status(201).json({ id: result.insertId, success: true });
   } catch (error) {
     console.error('Create machine parameter failed:', error);
@@ -229,6 +577,8 @@ app.post('/api/machine-parameters/bulk', async (req, res) => {
       `INSERT INTO machine_parameters (machine_no, part_master, part_checklist, action, standard, sort_order) VALUES ?`,
       [values]
     );
+
+    await logAuditEvent(req, { eventType: 'MACHINE_PARAMETERS_IMPORTED', entityType: 'machine_parameters', metadata: { inserted: result.affectedRows } });
 
     res.status(201).json({ success: true, inserted: result.affectedRows });
   } catch (error) {
@@ -264,6 +614,8 @@ app.patch('/api/machine-parameters/:id', async (req, res) => {
       return res.status(404).json({ message: 'Machine parameter not found' });
     }
 
+    await logAuditEvent(req, { eventType: 'MACHINE_PARAMETER_UPDATED', entityType: 'machine_parameters', entityId: id, metadata: { fields: fields.map((field) => field.split(' ')[0]) } });
+
     res.json({ success: true, id: Number(id) });
   } catch (error) {
     console.error('Update machine parameter failed:', error);
@@ -273,7 +625,10 @@ app.patch('/api/machine-parameters/:id', async (req, res) => {
 
 app.delete('/api/machine-parameters/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM machine_parameters WHERE id = ?', [Number(req.params.id)]);
+    const [result] = await pool.query('DELETE FROM machine_parameters WHERE id = ?', [Number(req.params.id)]);
+    if (result.affectedRows) {
+      await logAuditEvent(req, { eventType: 'MACHINE_PARAMETER_DELETED', entityType: 'machine_parameters', entityId: req.params.id });
+    }
     res.json({ success: true, id: Number(req.params.id) });
   } catch (error) {
     console.error('Delete machine parameter failed:', error);
@@ -361,6 +716,8 @@ app.post('/api/schedules', async (req, res) => {
         status,
       ]
     );
+
+    await logAuditEvent(req, { eventType: 'SCHEDULE_PLAN_CREATED', entityType: 'preventive_schedule', entityId: result.insertId, metadata: { machineNo: machine_no, year: tahun, month: bulan, week: minggu } });
 
     res.status(201).json({ id: result.insertId, success: true });
   } catch (error) {
@@ -568,6 +925,8 @@ app.post('/api/approved-orders', async (req, res) => {
       ],
     );
 
+    await logAuditEvent(req, { eventType: 'MAINTENANCE_ORDER_CREATED', entityType: 'maintenance_orders', entityId: result.insertId, metadata: { machineNo: machine_no, status: orderStatus } });
+
     res.status(201).json({ id: result.insertId, success: true });
   } catch (error) {
     console.error('Create approved order failed:', error);
@@ -631,6 +990,8 @@ app.patch('/api/approved-orders/:id', async (req, res) => {
     if (!result.affectedRows) {
       return res.status(404).json({ message: 'Approved order not found' });
     }
+
+    await logAuditEvent(req, { eventType: 'MAINTENANCE_ORDER_UPDATED', entityType: 'maintenance_orders', entityId: id, metadata: { fields: fields.map((field) => field.split(' ')[0]) } });
 
     res.json({ success: true, id: Number(id), status });
   } catch (error) {
@@ -718,6 +1079,7 @@ app.patch('/api/approved-orders/:id/results', async (req, res) => {
         );
       }
       await connection.commit();
+      await logAuditEvent(req, { eventType: 'ORDER_CHECKLIST_SAVED', entityType: 'maintenance_orders', entityId: orderId, metadata: { itemsUpdated: items.length } });
       res.json({ success: true, orderId, updated: items.length });
     } catch (error) {
       await connection.rollback();
@@ -738,7 +1100,10 @@ app.delete('/api/schedules/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    await pool.query('DELETE FROM preventive_schedule WHERE id = ?', [id]);
+    const [result] = await pool.query('DELETE FROM preventive_schedule WHERE id = ?', [id]);
+    if (result.affectedRows) {
+      await logAuditEvent(req, { eventType: 'SCHEDULE_PLAN_DELETED', entityType: 'preventive_schedule', entityId: id });
+    }
     res.json({ success: true, id: Number(id) });
   } catch (error) {
     console.error('Delete schedule failed:', error);
@@ -888,6 +1253,8 @@ app.patch('/api/users/:id', async (req, res) => {
     if (!result.affectedRows) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    await logAuditEvent(req, { userId, eventType: 'USER_PROFILE_UPDATED', entityType: 'users', entityId: userId, metadata: { fields: fields.map((field) => field.split(' ')[0]) } });
 
     const [rows] = await pool.query(
       `
