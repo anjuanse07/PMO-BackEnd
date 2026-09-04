@@ -2016,42 +2016,49 @@ CREATE TABLE `preventive_types` (
 --
 -- Dumping data for table `preventive_types`
 --
+-- NOTE: as of 2026-09-04, `abbreviation` and `parameter` were corrected -
+-- they were previously populated backwards from their column names (e.g.
+-- id=32 was ('Service','S') instead of ('S','Service')). See migration
+-- 20260904_fix_preventive_types_column_swap.sql. `abbreviation` is now the
+-- short code (e.g. 'S', 'CF') and `parameter` is the full descriptive name
+-- (e.g. 'Service', 'Cuci Filter'), matching what the column names say.
+--
 
 LOCK TABLES `preventive_types` WRITE;
 /*!40000 ALTER TABLE `preventive_types` DISABLE KEYS */;
 INSERT INTO `preventive_types` VALUES
-(1,'Cleaning','C','2026-08-18 09:03:14'),
-(2,'Cleaning Ducting','CD','2026-08-18 09:03:14'),
-(3,'Cleaning Dust Collector','CDC','2026-08-18 09:03:14'),
-(4,'Cuci Filter','CF','2026-08-18 09:03:14'),
-(5,'Cleaning Filter Air Filter','CFAF','2026-08-18 09:03:14'),
-(6,'Cleaning Rotor','CR','2026-08-18 09:03:14'),
-(7,'Cleaning Sisi Air','CSA','2026-08-18 09:03:14'),
-(8,'Cleaning Vacum','CV','2026-08-18 09:03:14'),
-(9,'Ganti Bearing','GB','2026-08-18 09:03:14'),
-(10,'Ganti Belt','GBL','2026-08-18 09:03:14'),
-(11,'Ganti Electrode Set Ozone','GES','2026-08-18 09:03:14'),
-(12,'Ganti Filter','GF','2026-08-18 09:03:14'),
-(13,'Ganti Filter 3 micron','GF3','2026-08-18 09:03:14'),
-(14,'Ganti Filter 5 micron','GF5','2026-08-18 09:03:14'),
-(15,'Ganti Filter Type A','GFA','2026-08-18 09:03:14'),
-(16,'Ganti Filter Air Filter','GFAF','2026-08-18 09:03:14'),
-(17,'Ganti Filter KA','GFKA','2026-08-18 09:03:14'),
-(18,'Ganti Filter KB','GFKB','2026-08-18 09:03:14'),
-(19,'Ganti Filter KD','GFKD','2026-08-18 09:03:14'),
-(20,'Ganti Filter KE','GFKE','2026-08-18 09:03:14'),
-(21,'Ganti Filter Type S','GFS','2026-08-18 09:03:14'),
-(22,'Ganti Filter Type Steril','GFST','2026-08-18 09:03:14'),
-(23,'Ganti Filter Tangki','GFT','2026-08-18 09:03:14'),
-(24,'Ganti Filter Type V','GFV','2026-08-18 09:03:14'),
-(25,'Ganti Lampu','GL','2026-08-18 09:03:14'),
-(26,'Ganti Lampu TOC','GLT','2026-08-18 09:03:14'),
-(27,'Ganti Membran Ozone','GMO','2026-08-18 09:03:14'),
-(28,'Ganti Oli','GO','2026-08-18 09:03:14'),
-(29,'Ganti Pump Head','GPH','2026-08-18 09:03:14'),
-(30,'Ganti Teflon','GT','2026-08-18 09:03:14'),
-(31,'Integrity Hepa','IH','2026-08-18 09:03:14'),
-(32,'Service','S','2026-08-18 09:03:14');
+(1,'C','Cleaning','2026-08-18 09:03:14'),
+(2,'CD','Cleaning Ducting','2026-08-18 09:03:14'),
+(3,'CDC','Cleaning Dust Collector','2026-08-18 09:03:14'),
+(4,'CF','Cuci Filter','2026-08-18 09:03:14'),
+(5,'CFAF','Cleaning Filter Air Filter','2026-08-18 09:03:14'),
+(6,'CR','Cleaning Rotor','2026-08-18 09:03:14'),
+(7,'CSA','Cleaning Sisi Air','2026-08-18 09:03:14'),
+(8,'CV','Cleaning Vacum','2026-08-18 09:03:14'),
+(9,'GB','Ganti Bearing','2026-08-18 09:03:14'),
+(10,'GBL','Ganti Belt','2026-08-18 09:03:14'),
+(11,'GES','Ganti Electrode Set Ozone','2026-08-18 09:03:14'),
+(12,'GF','Ganti Filter','2026-08-18 09:03:14'),
+(13,'GF3','Ganti Filter 3 micron','2026-08-18 09:03:14'),
+(14,'GF5','Ganti Filter 5 micron','2026-08-18 09:03:14'),
+(15,'GFA','Ganti Filter Type A','2026-08-18 09:03:14'),
+(16,'GFAF','Ganti Filter Air Filter','2026-08-18 09:03:14'),
+(17,'GFKA','Ganti Filter KA','2026-08-18 09:03:14'),
+(18,'GFKB','Ganti Filter KB','2026-08-18 09:03:14'),
+(19,'GFKD','Ganti Filter KD','2026-08-18 09:03:14'),
+(20,'GFKE','Ganti Filter KE','2026-08-18 09:03:14'),
+(21,'GFS','Ganti Filter Type S','2026-08-18 09:03:14'),
+(22,'GFST','Ganti Filter Type Steril','2026-08-18 09:03:14'),
+(23,'GFT','Ganti Filter Tangki','2026-08-18 09:03:14'),
+(24,'GFV','Ganti Filter Type V','2026-08-18 09:03:14'),
+(25,'GL','Ganti Lampu','2026-08-18 09:03:14'),
+(26,'GLT','Ganti Lampu TOC','2026-08-18 09:03:14'),
+(27,'GMO','Ganti Membran Ozone','2026-08-18 09:03:14'),
+(28,'GO','Ganti Oli','2026-08-18 09:03:14'),
+(29,'GPH','Ganti Pump Head','2026-08-18 09:03:14'),
+(30,'GT','Ganti Teflon','2026-08-18 09:03:14'),
+(31,'IH','Integrity Hepa','2026-08-18 09:03:14'),
+(32,'S','Service','2026-08-18 09:03:14');
 /*!40000 ALTER TABLE `preventive_types` ENABLE KEYS */;
 UNLOCK TABLES;
 

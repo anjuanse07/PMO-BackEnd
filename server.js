@@ -17,6 +17,13 @@ const pool = mysql.createPool({
   connectionLimit: 10,
 });
 
+// Roles allowed to view Audit Logs / History Log. Kept as one list so both
+// pages (and their exports/imports) stay in sync if the allowed roles ever change.
+const LOG_VIEWER_ROLES = ['manager', 'engineering supervisor'];
+function isLogViewerRole(role) {
+  return LOG_VIEWER_ROLES.includes(String(role || '').toLowerCase());
+}
+
 // MySQL DATETIME columns reject ISO strings like '...T...Z'; normalize to 'YYYY-MM-DD HH:MM:SS'
 function toMySQLDateTime(value) {
   if (!value) return null;
@@ -69,6 +76,40 @@ async function logAuditEvent(req, {
   }
 }
 
+// Turns a raw audit_logs row (event_type + metadata JSON) into the same kind
+// of human-readable sentence the frontend builds for the Description column,
+// so the CSV export reads the same way the table does.
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function describeAuditEvent(row) {
+  const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const list = (value) => (Array.isArray(value) && value.length ? value.join(', ') : null);
+
+  switch (row.event_type) {
+    case 'LOGIN': return 'Signed in to the application';
+    case 'LOGOUT': return 'Signed out of the application';
+    case 'PAGE_VIEW': return `Viewed ${row.page_path || 'a page'}`;
+    case 'AUDIT_LOG_EXPORT': return `Exported audit logs (${String(meta.format || 'csv').toUpperCase()})`;
+    case 'HISTORY_LOG_EXPORT': return 'Exported the history log (CSV)';
+    case 'HISTORY_LOG_IMPORTED':
+      return `Imported ${meta.inserted ?? 0} history log record(s)${meta.skipped ? `, skipped ${meta.skipped}` : ''}`;
+    case 'MACHINE_PARAMETER_CREATED': return `Added a parameter to machine #${meta.machineNo ?? row.entity_id ?? '-'}`;
+    case 'MACHINE_PARAMETERS_IMPORTED': return `Imported ${meta.inserted ?? 0} machine parameter(s)`;
+    case 'MACHINE_PARAMETER_UPDATED': return `Updated parameter fields: ${list(meta.fields) || '-'}`;
+    case 'MACHINE_PARAMETER_DELETED': return 'Deleted a machine parameter';
+    case 'SCHEDULE_PLAN_CREATED':
+      return `Scheduled machine #${meta.machineNo ?? '-'} for ${meta.month != null ? MONTH_NAMES[meta.month] : '-'} ${meta.year ?? ''} (week ${meta.week ?? '-'})`;
+    case 'SCHEDULE_PLAN_DELETED': return 'Deleted a schedule plan';
+    case 'SCHEDULE_APPROVED_ENGINEERING': return 'Approved a schedule (Engineering stage)';
+    case 'SCHEDULE_APPROVED_MANAGER': return 'Approved a schedule (Manager stage)';
+    case 'MAINTENANCE_ORDER_CREATED': return `Created a preventive order for machine #${meta.machineNo ?? '-'} (status: ${meta.status ?? '-'})`;
+    case 'MAINTENANCE_ORDER_UPDATED': return `Updated order fields: ${list(meta.fields) || '-'}`;
+    case 'ORDER_CHECKLIST_SAVED': return `Saved checklist (${meta.itemsUpdated ?? 0} item(s) updated)`;
+    case 'USER_PROFILE_UPDATED': return `Updated profile fields: ${list(meta.fields) || '-'}`;
+    default:
+      return row.action_label || row.event_type.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
 app.get('/api/health', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT 1 AS ok');
@@ -97,8 +138,8 @@ app.post('/api/audit-events', async (req, res) => {
 });
 
 app.get('/api/audit-logs', async (req, res) => {
-  if (String(req.query.role || '').toLowerCase() !== 'manager') {
-    return res.status(403).json({ message: 'Only managers can view audit logs.' });
+  if (!isLogViewerRole(req.query.role)) {
+    return res.status(403).json({ message: 'Only managers and engineering supervisors can view audit logs.' });
   }
 
   const pageSize = 50;
@@ -142,7 +183,7 @@ app.get('/api/audit-logs', async (req, res) => {
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(page, totalPages);
     const [rows] = await pool.query(
-      `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, a.session_id,
+      `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, u.role AS user_role, a.session_id,
               a.event_type, a.entity_type, a.entity_id, a.page_path,
               a.action_label, a.metadata, a.ip_address, a.user_agent, a.created_at
        FROM audit_logs a
@@ -160,8 +201,8 @@ app.get('/api/audit-logs', async (req, res) => {
 });
 
 app.get('/api/audit-logs/export', async (req, res) => {
-  if (String(req.query.role || '').toLowerCase() !== 'manager') {
-    return res.status(403).json({ message: 'Only managers can export audit logs.' });
+  if (!isLogViewerRole(req.query.role)) {
+    return res.status(403).json({ message: 'Only managers and engineering supervisors can export audit logs.' });
   }
 
   const format = req.query.format === 'pdf' ? 'pdf' : 'csv';
@@ -188,7 +229,7 @@ app.get('/api/audit-logs/export', async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-          `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, a.session_id,
+          `SELECT a.id, a.user_id, u.nickname, u.name AS user_name, u.role AS user_role, a.session_id,
             a.event_type, a.entity_type, a.entity_id, a.page_path,
             a.action_label, a.metadata, a.ip_address, a.user_agent, a.created_at
        FROM audit_logs a
@@ -211,18 +252,16 @@ app.get('/api/audit-logs/export', async (req, res) => {
     }
 
     const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const columns = ['Time', 'Activity', 'Account', 'User ID', 'Page', 'Action', 'Entity Type', 'Entity ID', 'IP Address', 'Browser'];
+    const columns = ['Time', 'Action', 'Table', 'Account', 'Role', 'Description', 'IP Address', 'Status'];
     const lines = rows.map((row) => [
       row.created_at,
       row.event_type,
-      row.user_name || row.nickname || 'System',
-      row.user_id,
-      row.page_path,
-      row.action_label,
       row.entity_type,
-      row.entity_id,
+      row.user_name || row.nickname || 'System',
+      row.user_role,
+      describeAuditEvent(row),
       row.ip_address,
-      row.user_agent,
+      'Success', // every persisted row represents a write that completed - see logAuditEvent
     ].map(escapeCsv).join(','));
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -258,6 +297,7 @@ function buildHistoryLogFilters(req) {
   const machineNo = Number(req.query.machine_no) || null;
   const machineName = String(req.query.machine_name || '').trim();
   const machineId = String(req.query.machine_id || '').trim();   // kode_mesin / asset code
+  const technician = String(req.query.technician || '').trim();
   const status = String(req.query.status || '').trim();
   const startAt = String(req.query.start_at || '').trim();       // date, inclusive
   const endAt = String(req.query.end_at || '').trim();           // date, inclusive
@@ -290,6 +330,10 @@ function buildHistoryLogFilters(req) {
     filters.push('o.machine_asset LIKE ?');
     values.push(`%${machineId}%`);
   }
+  if (technician) {
+    filters.push('o.technician_name LIKE ?');
+    values.push(`%${technician}%`);
+  }
   if (status) {
     filters.push('o.status = ?');
     values.push(status);
@@ -311,6 +355,10 @@ function buildHistoryLogFilters(req) {
 // oldest-first, with the machine's main/child sub attached. The frontend
 // groups this by main sub -> machine -> chronological entries.
 app.get('/api/history-logs', async (req, res) => {
+  if (!isLogViewerRole(req.query.role)) {
+    return res.status(403).json({ message: 'Only managers and engineering supervisors can view the history log.' });
+  }
+
   try {
     const { whereClause, values } = buildHistoryLogFilters(req);
 
@@ -340,6 +388,10 @@ app.get('/api/history-logs', async (req, res) => {
 // Same filters as above, flattened to CSV. Logs an audit event, same
 // pattern as /api/audit-logs/export.
 app.get('/api/history-logs/export', async (req, res) => {
+  if (!isLogViewerRole(req.query.role)) {
+    return res.status(403).json({ message: 'Only managers and engineering supervisors can export the history log.' });
+  }
+
   try {
     const { whereClause, values } = buildHistoryLogFilters(req);
     const userId = Number(req.query.user_id) || null;
@@ -406,6 +458,10 @@ app.get('/api/history-logs/export', async (req, res) => {
 // checklist (there was no digital form for them) - "View Form" on the
 // frontend handles that gracefully and says no checklist is on file.
 app.post('/api/history-logs/import', async (req, res) => {
+  if (!isLogViewerRole(req.body.role)) {
+    return res.status(403).json({ message: 'Only managers and engineering supervisors can import history log records.' });
+  }
+
   try {
     const items = req.body.items;
     if (!Array.isArray(items) || !items.length) {
