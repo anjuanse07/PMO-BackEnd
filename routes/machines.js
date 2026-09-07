@@ -21,7 +21,7 @@ router.get('/api/machines', async (req, res) => {
 router.get('/api/technicians', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT technician_name, role, detail_technician_role, technician_main_sub, technician_child_sub
+      SELECT technician_name, inisial, role, detail_technician_role, technician_main_sub, technician_child_sub
       FROM technicians
       ORDER BY technician_main_sub, technician_name
     `);
