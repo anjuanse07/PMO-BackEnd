@@ -173,7 +173,7 @@ router.get('/api/notifications', async (req, res) => {
         pending.push({
           id: 'pending-engineering-schedule',
           title: `${draftRow.cnt} schedule${draftRow.cnt === 1 ? '' : 's'} awaiting Engineering approval`,
-          link: '/yearly-preventive-schedule',
+          link: '/yearly-preventive-schedule/entries',
           severity: 'warning',
         });
       }
@@ -201,7 +201,7 @@ router.get('/api/notifications', async (req, res) => {
         pending.push({
           id: 'pending-manager-schedule',
           title: `${managerScheduleRow.cnt} schedule${managerScheduleRow.cnt === 1 ? '' : 's'} awaiting Manager approval`,
-          link: '/yearly-preventive-schedule',
+          link: '/yearly-preventive-schedule/entries',
           severity: 'error',
         });
       }
@@ -252,18 +252,49 @@ router.get('/api/notifications', async (req, res) => {
     const [machineRows] = await pool.query('SELECT no, nama_mesin, kode_mesin FROM machines');
     const machinesByNo = new Map(machineRows.map((m) => [m.no, m]));
 
-    const activity = activityRows.map((row) => ({
-      id: row.id,
-      title: describeAuditEvent(row, machinesByNo),
-      userName: row.user_name,
-      createdAt: row.created_at,
-      link:
-        row.entity_type === 'maintenance_orders'
-          ? '/PreventiveMaintenanceOrder'
-          : row.entity_type === 'preventive_schedule'
-            ? '/yearly-preventive-schedule'
-            : null,
-    }));
+    // The audit log is a permanent record - an entry like "Scheduled X"
+    // stays there forever even after the schedule itself gets deleted,
+    // because that's genuinely what happened at that point in time.
+    // But it's confusing to show a notification about something you can
+    // no longer click into, so filter the feed down to entries whose
+    // underlying schedule/order is still actually live.
+    const scheduleEntityIds = activityRows
+      .filter((r) => r.entity_type === 'preventive_schedule')
+      .map((r) => r.entity_id);
+    const orderEntityIds = activityRows
+      .filter((r) => r.entity_type === 'maintenance_orders')
+      .map((r) => r.entity_id);
+
+    const [existingSchedules] = scheduleEntityIds.length
+      ? await pool.query('SELECT id FROM preventive_schedule WHERE id IN (?)', [scheduleEntityIds])
+      : [[]];
+    const [existingOrders] = orderEntityIds.length
+      ? await pool.query('SELECT id FROM maintenance_orders WHERE id IN (?)', [orderEntityIds])
+      : [[]];
+
+    const existingScheduleIds = new Set(existingSchedules.map((r) => String(r.id)));
+    const existingOrderIds = new Set(existingOrders.map((r) => String(r.id)));
+
+    const stillExists = (row) => {
+      if (row.entity_type === 'preventive_schedule') return existingScheduleIds.has(String(row.entity_id));
+      if (row.entity_type === 'maintenance_orders') return existingOrderIds.has(String(row.entity_id));
+      return true; // not tied to a deletable record (e.g. logins, exports)
+    };
+
+    const activity = activityRows
+      .filter(stillExists)
+      .map((row) => ({
+        id: row.id,
+        title: describeAuditEvent(row, machinesByNo),
+        userName: row.user_name,
+        createdAt: row.created_at,
+        link:
+          row.entity_type === 'maintenance_orders'
+            ? '/PreventiveMaintenanceOrder'
+            : row.entity_type === 'preventive_schedule'
+              ? '/yearly-preventive-schedule/entries'
+              : null,
+      }));
 
     res.json({ pending, activity });
   } catch (error) {

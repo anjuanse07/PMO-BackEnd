@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../lib/db');
 const { logAuditEvent } = require('../lib/auditLog');
-const { toMySQLDateTime } = require('../lib/dates');
+const { toMySQLDateTime, toMySQLDate } = require('../lib/dates');
 
 router.get('/api/approved-orders', async (req, res) => {
   try {

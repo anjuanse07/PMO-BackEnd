@@ -227,4 +227,94 @@ router.delete('/api/schedules/:id', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// ONE-OFF REPAIR (safe to run more than once, safe to leave in place)
+// ---------------------------------------------------------------------
+//
+// Backstory: routes/orders.js was missing an import for toMySQLDate, so
+// every "Manager Approval & Send" click crashed partway through - the
+// schedule's own status still correctly updated to "Approved by Manager",
+// but the linked maintenance_orders row was never created, since that
+// happens in a second, separate request that threw before it could insert
+// anything. The import is fixed now, but any schedule approved while the
+// bug was live is stuck: "Approved by Manager" and locked, with no matching
+// order and no retry button (the UI intentionally locks entries once they
+// reach that status).
+//
+// This finds every schedule at that status, checks whether its order
+// already exists (same check POST /api/approved-orders already does:
+// machine_no + year + month + week + preventive_types), and creates
+// whatever's missing using the schedule's own stored data. Already-fine
+// entries are silently skipped, so this is safe to run again later if
+// needed - it won't create duplicates.
+router.post('/api/schedules/repair-missing-orders', async (req, res) => {
+  try {
+    const { current_role } = req.body;
+    if (current_role !== 'manager') {
+      return res.status(403).json({ message: 'Only the manager can run this repair.' });
+    }
+
+    const [approvedSchedules] = await pool.query(
+      `SELECT * FROM preventive_schedule WHERE status = 'Approved by Manager'`,
+    );
+
+    const repaired = [];
+    let alreadyOkCount = 0;
+
+    for (const sched of approvedSchedules) {
+      const [existingOrders] = await pool.query(
+        `SELECT id FROM maintenance_orders
+         WHERE machine_no = ? AND year = ? AND month = ? AND week = ? AND preventive_types = ?
+         LIMIT 1`,
+        [sched.machine_no, sched.tahun, sched.bulan, sched.minggu, sched.preventive_types],
+      );
+
+      if (existingOrders.length) {
+        alreadyOkCount += 1;
+        continue;
+      }
+
+      const [result] = await pool.query(
+        `INSERT INTO maintenance_orders
+         (machine_no, machine_asset, machine_name, location, department, sub, year, month, week, preventive_types, preventive_date, execution_date, start_clock, end_clock, technician_name, status, approved_by_manager_date, approved_by_manager_user)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sched.machine_no,
+          sched.machine_asset,
+          sched.machine_name,
+          sched.location || null,
+          sched.department || null,
+          sched.sub,
+          sched.tahun,
+          sched.bulan,
+          sched.minggu,
+          sched.preventive_types,
+          null,
+          null,
+          '08:00:00',
+          '10:00:00',
+          'Planner',
+          'In Progress',
+          toMySQLDateTime(sched.approved_by_manager_date),
+          sched.approved_by_manager_user,
+        ],
+      );
+
+      await logAuditEvent(req, {
+        eventType: 'MAINTENANCE_ORDER_CREATED',
+        entityType: 'maintenance_orders',
+        entityId: result.insertId,
+        metadata: { machineNo: sched.machine_no, status: 'In Progress', repaired: true },
+      });
+
+      repaired.push({ scheduleId: sched.id, orderId: result.insertId, machineAsset: sched.machine_asset });
+    }
+
+    res.json({ repairedCount: repaired.length, alreadyOkCount, repaired });
+  } catch (error) {
+    console.error('Repair missing orders failed:', error);
+    res.status(500).json({ message: 'Failed to repair missing orders' });
+  }
+});
+
 module.exports = router;
