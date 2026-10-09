@@ -14,11 +14,17 @@ function buildHistoryLogFilters(req) {
   const machineName = String(req.query.machine_name || '').trim();
   const machineId = String(req.query.machine_id || '').trim();   // kode_mesin / asset code
   const technician = String(req.query.technician || '').trim();
-  const status = String(req.query.status || '').trim();
   const startAt = String(req.query.start_at || '').trim();       // date, inclusive
   const endAt = String(req.query.end_at || '').trim();           // date, inclusive
 
-  const filters = [];
+  const filters = [
+    // History Log is a record of finished work, not a live order tracker
+    // (that's what Preventive Orders is for) - only orders that are both
+    // Completed AND have cleared Engineering approval ever show here,
+    // regardless of any other filter selected.
+    "o.status = 'Completed'",
+    'o.approved_by_engineering_date IS NOT NULL',
+  ];
   const values = [];
 
   if (search) {
@@ -49,10 +55,6 @@ function buildHistoryLogFilters(req) {
   if (technician) {
     filters.push('o.technician_name LIKE ?');
     values.push(`%${technician}%`);
-  }
-  if (status) {
-    filters.push('o.status = ?');
-    values.push(status);
   }
   if (startAt) {
     filters.push('COALESCE(o.execution_date, o.preventive_date) >= ?');

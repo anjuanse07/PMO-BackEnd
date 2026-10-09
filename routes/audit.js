@@ -25,7 +25,10 @@ router.get('/api/audit-logs', async (req, res) => {
     return res.status(403).json({ message: 'Only managers and engineering supervisors can view audit logs.' });
   }
 
-  const pageSize = 50;
+  const requestedPageSize = Number(req.query.page_size);
+  const pageSize = Number.isFinite(requestedPageSize)
+    ? Math.min(200, Math.max(10, Math.floor(requestedPageSize)))
+    : 50;
   const requestedPage = Number(req.query.page);
   const page = Number.isFinite(requestedPage) ? Math.max(Math.floor(requestedPage), 1) : 1;
   const search = String(req.query.search || '').trim();
